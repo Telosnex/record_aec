@@ -256,7 +256,7 @@ extension RecorderStreamDelegate {
       )
     }
 
-    let audioUnitInstance = auAudioUnit
+    let audioUnitInstance = auAudioUnit.audioUnit
 
     // Enable I/O on input scope for the VPIO unit.
     var enableIO: UInt32 = 1
