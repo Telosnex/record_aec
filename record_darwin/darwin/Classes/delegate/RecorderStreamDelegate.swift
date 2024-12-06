@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import os.log
 
 class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
   private var audioEngine: AVAudioEngine?
