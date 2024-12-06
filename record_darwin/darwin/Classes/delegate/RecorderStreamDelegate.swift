@@ -2,6 +2,16 @@ import AVFoundation
 import Foundation
 import AudioToolbox
 
+protocol AudioRecordingStreamDelegate {
+    func start(config: RecordConfig, recordEventHandler: RecordStreamHandler) throws
+    func stop(completionHandler: @escaping (String?) -> ())
+    func pause()
+    func resume() throws
+    func cancel() throws
+    func getAmplitude() -> Float
+    func dispose()
+}
+
 class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
     private var audioEngine: AVAudioEngine?
     private var amplitude: Float = -160.0
@@ -235,9 +245,9 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
         }
         
         // Create an instance of the Voice Processing AU
-        var audioUnit: AudioUnit?
-        let status = AudioComponentInstanceNew(component, &audioUnit)
-        guard status == noErr, let au = audioUnit else {
+        var rawAudioUnit: AudioUnit?
+        let status = AudioComponentInstanceNew(component, &rawAudioUnit)
+        guard status == noErr, let rawAU = rawAudioUnit else {
             throw RecorderError.error(
                 message: "Failed to setup voice processing",
                 details: "Could not create Voice Processing AU instance"
@@ -250,7 +260,7 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
             var deviceIDValue = inputDeviceId
             let propertySize = UInt32(MemoryLayout<AudioDeviceID>.size)
             let setDeviceStatus = AudioUnitSetProperty(
-                au,
+                rawAU,
                 kAudioOutputUnitProperty_CurrentDevice,
                 kAudioUnitScope_Global,
                 1, // Input element
@@ -269,7 +279,7 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
         // Set default output device for AEC reference
         if var defaultOutputDevice = try? getDefaultOutputDeviceID() {
             let setOutputStatus = AudioUnitSetProperty(
-                au,
+                rawAU,
                 kAudioOutputUnitProperty_CurrentDevice,
                 kAudioUnitScope_Global,
                 0, // Output element
@@ -300,7 +310,7 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
         
         // Set format for input
         let setFormatStatus = AudioUnitSetProperty(
-            au,
+            rawAU,
             kAudioUnitProperty_StreamFormat,
             kAudioUnitScope_Output,
             1, // Input element
@@ -316,7 +326,7 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
         }
         
         // Initialize the AU
-        let initStatus = AudioUnitInitialize(au)
+        let initStatus = AudioUnitInitialize(rawAU)
         if initStatus != noErr {
             throw RecorderError.error(
                 message: "Failed to setup voice processing",
@@ -325,12 +335,12 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
         }
         
         // Create an AVAudioUnit wrapper for the AU
-        var audioUnit: AVAudioUnit?
-        AVAudioUnit.instantiate(with: desc, options: .loadOutOfProcess) { avAudioUnit, _ in
-            audioUnit = avAudioUnit
+        var avAudioUnit: AVAudioUnit?
+        AVAudioUnit.instantiate(with: desc, options: .loadOutOfProcess) { avAudioUnitInstance, _ in
+            avAudioUnit = avAudioUnitInstance
         }
         
-        guard let audioUnit = audioUnit else {
+        guard let wrappedAudioUnit = avAudioUnit else {
             throw RecorderError.error(
                 message: "Failed to setup voice processing",
                 details: "Could not create AVAudioUnit wrapper"
@@ -338,10 +348,10 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
         }
         
         // Attach it to the engine
-        audioEngine.attach(audioUnit)
+        audioEngine.attach(wrappedAudioUnit)
         
         // Connect the input node to the main mixer
-        audioEngine.connect(audioUnit, to: audioEngine.mainMixerNode, format: nil)
+        audioEngine.connect(wrappedAudioUnit, to: audioEngine.mainMixerNode, format: nil)
         
         return audioEngine
     }
