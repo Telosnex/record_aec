@@ -56,6 +56,14 @@ extension AudioRecordingDelegate {
     } catch {
       throw RecorderError.error(message: "Failed to start recording", details: "setCategory: \(error.localizedDescription)")
     }
+
+    if config.echoCancel {
+      do {
+        try audioSession.setMode(.voiceChat)
+      } catch {
+        throw RecorderError.error(message: "Failed to start recording", details: "setMode: \(error.localizedDescription)")
+      }
+    }
     
     do {
       try audioSession.setPreferredSampleRate((config.sampleRate <= 48000) ? Double(config.sampleRate) : 48000.0)
