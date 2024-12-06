@@ -249,14 +249,7 @@ extension RecorderStreamDelegate {
                                      interleaved: true) ?? inputFormat
     audioEngine.connect(voiceProcessingAU, to: mainMixer, format: outputFormat)
 
-    guard let auAudioUnit = voiceProcessingAU.auAudioUnit as? AUAudioUnit else {
-      throw RecorderError.error(
-        message: "Failed to setup AEC",
-        details: "Could not access AUAudioUnit"
-      )
-    }
-
-    let audioUnitInstance = auAudioUnit.audioUnit
+    let audioUnitInstance = voiceProcessingAU.audioUnit
 
     // Enable I/O on input scope for the VPIO unit.
     var enableIO: UInt32 = 1
