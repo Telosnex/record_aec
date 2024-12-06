@@ -2,16 +2,6 @@ import AVFoundation
 import Foundation
 import AudioToolbox
 
-protocol AudioRecordingStreamDelegate {
-    func start(config: RecordConfig, recordEventHandler: RecordStreamHandler) throws
-    func stop(completionHandler: @escaping (String?) -> ())
-    func pause()
-    func resume() throws
-    func cancel() throws
-    func getAmplitude() -> Float
-    func dispose()
-}
-
 class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
     private var audioEngine: AVAudioEngine?
     private var amplitude: Float = -160.0
