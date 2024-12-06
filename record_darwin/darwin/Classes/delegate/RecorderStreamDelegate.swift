@@ -285,15 +285,15 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
             }
         }
         
-        // Set up the desired audio format
+        // Set up the desired audio format - Voice Processing AU works best with mono
         var streamFormat = AudioStreamBasicDescription(
-            mSampleRate: Float64(config.sampleRate),
+            mSampleRate: 48000, // Voice Processing AU works best at 48kHz
             mFormatID: kAudioFormatLinearPCM,
             mFormatFlags: kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked,
-            mBytesPerPacket: 2 * UInt32(config.numChannels),
+            mBytesPerPacket: 2,
             mFramesPerPacket: 1,
-            mBytesPerFrame: 2 * UInt32(config.numChannels),
-            mChannelsPerFrame: UInt32(config.numChannels),
+            mBytesPerFrame: 2,
+            mChannelsPerFrame: 1, // Mono
             mBitsPerChannel: 16,
             mReserved: 0
         )
@@ -324,11 +324,62 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
             )
         }
         
-        // Create an AVAudioUnit wrapper for the AU
-        var avAudioUnit: AVAudioUnit?
-        AVAudioUnit.instantiate(with: desc, options: .loadOutOfProcess) { avAudioUnitInstance, _ in
-            avAudioUnit = avAudioUnitInstance
+        // Add input and output render callbacks
+        var renderCallbackStruct = AURenderCallbackStruct(
+            inputProc: { (inRefCon, ioActionFlags, inTimeStamp, inBusNumber, inNumberFrames, ioData) -> OSStatus in
+                return noErr
+            },
+            inputProcRefCon: nil
+        )
+        
+        // Set input callback
+        let inputCallbackStatus = AudioUnitSetProperty(
+            rawAU,
+            kAudioOutputUnitProperty_SetInputCallback,
+            kAudioUnitScope_Global,
+            0, // Input element
+            &renderCallbackStruct,
+            UInt32(MemoryLayout<AURenderCallbackStruct>.size)
+        )
+        
+        if inputCallbackStatus != noErr {
+            throw RecorderError.error(
+                message: "Failed to setup voice processing",
+                details: "Could not set input callback: \(inputCallbackStatus)"
+            )
         }
+        
+        // Set output callback for AEC reference
+        let outputCallbackStatus = AudioUnitSetProperty(
+            rawAU,
+            kAudioUnitProperty_SetRenderCallback,
+            kAudioUnitScope_Input,
+            0, // Output element
+            &renderCallbackStruct,
+            UInt32(MemoryLayout<AURenderCallbackStruct>.size)
+        )
+        
+        if outputCallbackStatus != noErr {
+            throw RecorderError.error(
+                message: "Failed to setup voice processing",
+                details: "Could not set output callback: \(outputCallbackStatus)"
+            )
+        }
+        
+        // Create an audio unit that we'll use for voice processing
+        var avAudioUnit: AVAudioUnit?
+        let semaphore = DispatchSemaphore(value: 0)
+        
+        AVAudioUnit.instantiate(with: desc, options: []) { avAudioUnitInstance, error in
+            if let error = error {
+                print("Failed to create AVAudioUnit: \(error)")
+            } else {
+                avAudioUnit = avAudioUnitInstance
+            }
+            semaphore.signal()
+        }
+        
+        _ = semaphore.wait(timeout: .now() + 2.0)
         
         guard let wrappedAudioUnit = avAudioUnit else {
             throw RecorderError.error(
@@ -340,8 +391,8 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
         // Attach it to the engine
         audioEngine.attach(wrappedAudioUnit)
         
-        // Connect the input node to the main mixer
-        audioEngine.connect(wrappedAudioUnit, to: audioEngine.mainMixerNode, format: nil)
+        // Connect the unit's output to the engine's input using the audio format
+        audioEngine.connect(wrappedAudioUnit, to: audioEngine.inputNode, format: nil)
         
         return audioEngine
     }
