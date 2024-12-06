@@ -325,7 +325,17 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
         }
         
         // Create an AVAudioUnit wrapper for the AU
-        let audioUnit = AVAudioUnit(audioUnit: au)
+        var audioUnit: AVAudioUnit?
+        AVAudioUnit.instantiate(with: desc, options: .loadOutOfProcess) { avAudioUnit, _ in
+            audioUnit = avAudioUnit
+        }
+        
+        guard let audioUnit = audioUnit else {
+            throw RecorderError.error(
+                message: "Failed to setup voice processing",
+                details: "Could not create AVAudioUnit wrapper"
+            )
+        }
         
         // Attach it to the engine
         audioEngine.attach(audioUnit)
