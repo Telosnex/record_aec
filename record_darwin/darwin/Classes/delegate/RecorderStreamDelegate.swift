@@ -25,6 +25,10 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
        let inputDeviceId = getAudioDeviceIDFromUID(uid: deviceId) {
       do {
         try audioEngine.inputNode.auAudioUnit.setDeviceID(inputDeviceId)
+        if config.echoCancel {
+            try audioEngine.inputNode.setVoiceProcessingEnabled(true)
+            audioEngine.inputNode.isVoiceProcessingBypassed = false
+        }
       } catch {
         throw RecorderError.error(
           message: "Failed to start recording",
