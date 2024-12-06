@@ -3,6 +3,7 @@ import Foundation
 
 class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
   private var audioEngine: AVAudioEngine?
+  private var processingGraph: AUGraph?
   private var amplitude: Float = -160.0
   private let bus = 0
   private var onPause: () -> ()
@@ -13,23 +14,65 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
     self.onStop = onStop
   }
 
+  private func setupEchoCancellation() throws {
+    // Create and open the processing graph
+    if let error = NewAUGraph(&self.processingGraph).error {
+      throw RecorderError.error(
+        message: "Failed to create processing graph",
+        details: error.localizedDescription
+      )
+    }
+
+    if let error = AUGraphOpen(self.processingGraph!).error {
+      throw RecorderError.error(
+        message: "Failed to open processing graph",
+        details: error.localizedDescription
+      )
+    }
+
+    // Configure the VoiceProcessingIO audio unit
+    var description = AudioComponentDescription()
+    description.componentType = kAudioUnitType_Output
+    description.componentSubType = kAudioUnitSubType_VoiceProcessingIO
+    description.componentManufacturer = kAudioUnitManufacturer_Apple
+
+    var remoteIONode: AUNode = AUNode()
+    
+    if let error = AUGraphAddNode(self.processingGraph!, &description, &remoteIONode).error {
+      throw RecorderError.error(
+        message: "Failed to add remote IO node",
+        details: error.localizedDescription
+      )
+    }
+
+    if let error = AUGraphInitialize(self.processingGraph!).error {
+      throw RecorderError.error(
+        message: "Failed to initialize processing graph",
+        details: error.localizedDescription
+      )
+    }
+  }
+
   func start(config: RecordConfig, recordEventHandler: RecordStreamHandler) throws {
     let audioEngine = AVAudioEngine()
     
-#if os(iOS)
-    try initAVAudioSession(config: config)
-    try setVoiceProcessing(echoCancel: config.echoCancel, autoGain: config.autoGain, audioEngine: audioEngine)
-#else
-    // set input device to the node
+    #if os(macOS)
+    // Set up echo cancellation for macOS
+    try setupEchoCancellation()
+    
+    // Set input device and enable voice processing
     if let deviceId = config.device?.id,
        let inputDeviceId = getAudioDeviceIDFromUID(uid: deviceId) {
       do {
         try audioEngine.inputNode.auAudioUnit.setDeviceID(inputDeviceId)
+        
         if config.echoCancel {
-            try audioEngine.inputNode.setVoiceProcessingEnabled(true)
-            audioEngine.inputNode.isVoiceProcessingBypassed = false
-            try audioEngine.outputNode.setVoiceProcessingEnabled(true)
-            print("Set input and output voice processing enabled")
+          // Enable voice processing on both input and output nodes
+          try audioEngine.inputNode.setVoiceProcessingEnabled(true)
+          audioEngine.inputNode.isVoiceProcessingBypassed = false
+          try audioEngine.outputNode.setVoiceProcessingEnabled(true)
+          audioEngine.outputNode.isVoiceProcessingBypassed = false
+          print("Voice processing enabled for input and output nodes")
         }
       } catch {
         throw RecorderError.error(
@@ -38,8 +81,13 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
         )
       }
     }
-#endif
+    #else
+    // iOS setup code remains unchanged
+    try initAVAudioSession(config: config)
+    try setVoiceProcessing(echoCancel: config.echoCancel, autoGain: config.autoGain, audioEngine: audioEngine)
+    #endif
     
+    // Rest of the start method implementation remains the same
     let srcFormat = audioEngine.inputNode.inputFormat(forBus: 0)
     
     let dstFormat = AVAudioFormat(
@@ -85,6 +133,16 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
       do {
         try setVoiceProcessing(echoCancel: false, autoGain: false, audioEngine: audioEngine)
       } catch {}
+    }
+    #endif
+
+    #if os(macOS)
+    if let graph = processingGraph {
+      AUGraphClose(graph)
+      DispatchQueue.main.async {
+        AUGraphUninitialize(graph)
+        self.processingGraph = nil
+      }
     }
     #endif
     
@@ -206,3 +264,4 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
     }
   }
 }
+
