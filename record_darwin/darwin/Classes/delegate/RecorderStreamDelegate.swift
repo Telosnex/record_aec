@@ -29,6 +29,7 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
             try audioEngine.inputNode.setVoiceProcessingEnabled(true)
             audioEngine.inputNode.isVoiceProcessingBypassed = false
             try audioEngine.outputNode.setVoiceProcessingEnabled(true)
+            print("Set input and output voice processing enabled")
         }
       } catch {
         throw RecorderError.error(
