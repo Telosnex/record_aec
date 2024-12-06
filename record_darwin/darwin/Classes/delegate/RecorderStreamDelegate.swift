@@ -71,7 +71,6 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
           try audioEngine.inputNode.setVoiceProcessingEnabled(true)
           audioEngine.inputNode.isVoiceProcessingBypassed = false
           try audioEngine.outputNode.setVoiceProcessingEnabled(true)
-          audioEngine.outputNode.isVoiceProcessingBypassed = false
           print("Voice processing enabled for input and output nodes")
         }
       } catch {
@@ -265,3 +264,27 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
   }
 }
 
+
+extension OSStatus {
+    var error: NSError? {
+        guard self != noErr else { return nil }
+        
+        let message = self.asString() ?? "Unrecognized OSStatus"
+        
+        return NSError(
+            domain: NSOSStatusErrorDomain,
+            code: Int(self),
+            userInfo: [
+                NSLocalizedDescriptionKey: message
+            ])
+    }
+    
+    private func asString() -> String? {
+        let n = UInt32(bitPattern: self.littleEndian)
+        guard let n1 = UnicodeScalar((n >> 24) & 255), n1.isASCII else { return nil }
+        guard let n2 = UnicodeScalar((n >> 16) & 255), n2.isASCII else { return nil }
+        guard let n3 = UnicodeScalar((n >> 8) & 255), n3.isASCII else { return nil }
+        guard let n4 = UnicodeScalar(n & 255), n4.isASCII else { return nil }
+        return String(n1) + String(n2) + String(n3) + String(n4)
+    }
+}
