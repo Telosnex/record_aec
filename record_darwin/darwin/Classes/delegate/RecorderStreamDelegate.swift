@@ -86,20 +86,28 @@ class RecorderStreamDelegate: NSObject, AudioRecordingStreamDelegate {
     try setVoiceProcessing(echoCancel: config.echoCancel, autoGain: config.autoGain, audioEngine: audioEngine)
     #endif
     
-    // Rest of the start method implementation remains the same
     let srcFormat = audioEngine.inputNode.inputFormat(forBus: 0)
+    os_log(.info, log: log, "Source format - Sample Rate: %{public}f, Channels: %{public}d", 
+           srcFormat.sampleRate, 
+           srcFormat.channelCount)
+    
+    // Try to match source sample rate if possible
+    let actualSampleRate = config.sampleRate > 0 ? Double(config.sampleRate) : srcFormat.sampleRate
     
     let dstFormat = AVAudioFormat(
       commonFormat: .pcmFormatInt16,
-      sampleRate: Double(config.sampleRate),
+      sampleRate: actualSampleRate,
       channels: AVAudioChannelCount(config.numChannels),
       interleaved: true
     )
 
     guard let dstFormat = dstFormat else {
+      let errorMsg = String(format: "Failed to create format with sample rate: %.1f Hz, channels: %d",
+                          actualSampleRate, config.numChannels)
+      os_log(.error, log: log, "%{public}@", errorMsg)
       throw RecorderError.error(
         message: "Failed to start recording",
-        details: "Format is not supported: \(config.sampleRate)Hz - \(config.numChannels) channels."
+        details: errorMsg
       )
     }
     
